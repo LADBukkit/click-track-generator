@@ -152,7 +152,7 @@ btnDown.onclick = () => {
         const a = document.createElement('a')
         a.style.display = 'none'
         a.href = bUrl
-        a.download = inBpm.value + '.mp3'
+        a.download = inBpm.value + '-' + inPat.value + '.mp3'
         document.body.appendChild(a)
         a.click()
         window.URL.revokeObjectURL(bUrl)
