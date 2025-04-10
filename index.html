@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Click Generator</title>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/semantic-ui/2.5.0/semantic.min.css" integrity="sha512-KXol4x3sVoO+8ZsWPFI/r5KBVB/ssCGB5tsv2nVOKwLg33wTFP3fmnXa47FdSVIshVTgsYk/1734xSk9aFIa4A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js" integrity="sha512-xT0S/xXvkrfkRXGBPlzZPCAncnMK5c1N7slRkToUbv8Z901aUEuKO84tLy8dWU+3ew4InFEN7TebPaVMy2npZw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="audio-buffer.js"></script>
+</head>
+<body>
+    <h1 class="ui center aligned header">Click Track Generator</h1>
+    <div class="ui container">
+        <div class="ui form">
+            <div class="ui fluid field labeled input">
+                <div class="ui label">
+                    BPM
+                </div>
+                <input type="number" id="bpm" value="120"/>
+            </div>
+
+            <div class="ui fluid field labeled input">
+                <div class="ui label">
+                    Subdivisions
+                </div>
+                <input type="number" id="subdivision" value="1"/>
+            </div>
+
+            <div class="ui fluid field labeled input">
+                <div class="ui label">
+                    Pattern
+                </div>
+                <input type="text" id="pattern" value="ABBB"/>
+            </div>
+
+            <div class="ui fluid field labeled input">
+                <div class="ui label">
+                    Length (sec)
+                </div>
+                <input type="number" id="length" value="600"/>
+            </div>
+
+            <button id="play" class="ui fluid field button">Play</button>
+            <button id="download" class="ui fluid field button">Download</button>
+            <div id="loader" class="ui loader indeterminate text large ">Preparing Audio</div>
+        </div>
+    </div>
+</body>
+</html>
+
+<script>
+
+const inBpm = document.getElementById("bpm")
+const inSub = document.getElementById("subdivision")
+const inPat = document.getElementById("pattern")
+const inLen = document.getElementById("length")
+const btnPlay = document.getElementById("play")
+const btnDown = document.getElementById("download")
+const loader = document.getElementById("loader")
+
+
+let audioCtx = new AudioContext()
+let aBuf
+let bBuf
+
+loadFile("A.wav").then(buf => aBuf = buf)
+loadFile("B.wav").then(buf => bBuf = buf)
+
+async function loadFile(path) {
+    const res = await fetch(path)
+    const arrayBuf = await res.arrayBuffer()
+    return await audioCtx.decodeAudioData(arrayBuf)
+}
+
+function createClick(timeLen) {
+    const bpm = inBpm.value
+    const subdivision = inSub.value
+    let pattern = inPat.value
+
+    const timePerBeat = 60 / bpm / subdivision
+    const timePerPattern = timePerBeat * pattern.length
+
+    let frameCount = audioCtx.sampleRate * timePerPattern
+    if(timeLen != -1) {
+        const repeats = Math.ceil(timeLen / timePerPattern)
+        frameCount *= repeats
+        pattern = pattern.repeat(repeats)
+    }
+
+    const buffer = new AudioBuffer({
+        numberOfChannels: 1,
+        length: frameCount,
+        sampleRate: audioCtx.sampleRate
+    })
+
+    const aBytes = aBuf.getChannelData(0)
+    const bBytes = bBuf.getChannelData(0)
+
+    const patBytes = buffer.getChannelData(0)
+
+    for(let beat = 0; beat < pattern.length; beat++) {
+        let pat = pattern.charAt(beat)
+        const bytes = pat === 'A' ? aBytes : bBytes
+
+        const offset = Math.round(beat * timePerBeat * audioCtx.sampleRate)
+
+        for(let i = 0; i < bytes.length; i++) {
+            if(offset + i >= frameCount) break
+
+            patBytes[offset + i] = bytes[i]
+        }
+    }
+
+    return buffer
+}
+
+// play the click
+let playSource
+let playing = false
+btnPlay.onclick = () => {
+    if(playing) {
+        playSource.stop()
+        playing = false
+        return
+    }
+
+    playSource = audioCtx.createBufferSource()
+
+    const clickBuf = createClick(-1)
+
+    playSource.buffer = clickBuf
+    playSource.connect(audioCtx.destination)
+    playSource.loop = true
+    playSource.start()
+    playing = true
+}
+
+// download
+btnDown.onclick = () => {
+    loader.classList.add("active")
+
+    setTimeout(() => {
+        const clickBuf = createClick(inLen.value)
+
+        const mp3 = audioBufferToWav(clickBuf)
+
+        var mp3Blob = new Blob(mp3, {type: 'audio/mp3'});
+        var bUrl = window.URL.createObjectURL(mp3Blob);
+
+        const a = document.createElement('a')
+        a.style.display = 'none'
+        a.href = bUrl
+        a.download = inBpm.value + '.mp3'
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(bUrl)
+        a.remove()
+
+        loader.classList.remove("active")
+    }, 0)
+}
+
+</script>
